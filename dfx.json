@@ -1,0 +1,27 @@
+{
+  "canisters": {
+    "medical_records_backend": {
+      "candid": "src/medical_records_backend/medical_records_backend.did",
+      "package": "medical_records_backend",
+      "type": "rust"
+    },
+    "medical_records_frontend": {
+      "dependencies": [
+        "medical_records_backend"
+      ],
+      "source": [
+        "src/medical_records_frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "medical_records_frontend"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
