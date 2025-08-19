@@ -1,20 +1,255 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IC Hello Starter</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Records DApp</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/agent-js/0.19.2/index.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        .record { border: 1px solid #eee; padding: 15px; margin: 10px 0; border-radius: 4px; }
+        .record-type { font-weight: bold; color: #007bff; }
+        .timestamp { color: #666; font-size: 0.9em; }
+        .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
 </head>
-
 <body>
-  <div class="browser-warning">
-    ⚠️ If this page appears broken, try reloading. If the problem persists, try switching browsers; Chrome or
-    Firefox are recommended.
-  </div>
-  <div id="root"></div>
-  <script type="module" src="/src/main.js"></script>
-</body>
+    <div class="container">
+        <div class="header">
+            <h1>Medical Records DApp</h1>
+            <p>Secure, patient-controlled medical records on ICP</p>
+        </div>
 
+        <div class="card">
+            <h2>Connection Status</h2>
+            <div id="status" class="status">Click Connect to start</div>
+            <button id="connectBtn">Connect to ICP</button>
+        </div>
+
+        <div class="card">
+            <h2>Add Medical Record</h2>
+            <div class="form-group">
+                <label>Record Type:</label>
+                <select id="recordType">
+                    <option value="diagnosis">Diagnosis</option>
+                    <option value="prescription">Prescription</option>
+                    <option value="lab_result">Lab Result</option>
+                    <option value="visit_note">Visit Note</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Content:</label>
+                <textarea id="content" rows="4" placeholder="Enter medical record details..."></textarea>
+            </div>
+            <button id="addRecordBtn">Add Record</button>
+        </div>
+
+        <div class="card">
+            <h2>My Medical Records</h2>
+            <button id="loadRecordsBtn">Load My Records</button>
+            <div id="recordsList"></div>
+        </div>
+
+        <div class="card">
+            <h2>Share with Provider</h2>
+            <div class="form-group">
+                <label>Record ID:</label>
+                <input type="text" id="shareRecordId" placeholder="Enter record ID">
+            </div>
+            <div class="form-group">
+                <label>Provider Principal ID:</label>
+                <input type="text" id="providerId" placeholder="Enter provider's principal ID">
+            </div>
+            <button id="shareRecordBtn">Share Record</button>
+        </div>
+
+        <div class="card">
+            <h2>Provider View</h2>
+            <button onclick="loadSharedRecords()">Load Shared Records</button>
+            <div id="sharedRecordsList"></div>
+        </div>
+    </div>
+
+    <script>
+        let actor;
+        let agent;
+
+        // Canister ID - replace with your deployed canister ID
+        const canisterId = "YOUR_BACKEND_CANISTER_ID_HERE"; // Get this from: dfx canister id medical_records_backend
+
+        async function connect() {
+            try {
+                // Create agent (in production, use Internet Identity)
+                agent = new HttpAgent({ host: "http://localhost:4943" });
+                await agent.fetchRootKey(); // Only for local development
+                
+                // Create actor
+                const idlFactory = ({ IDL }) => {
+                    const RecordInput = IDL.Record({
+                        'record_type': IDL.Text,
+                        'content': IDL.Text,
+                    });
+                    
+                    const MedicalRecord = IDL.Record({
+                        'id': IDL.Text,
+                        'patient_id': IDL.Principal,
+                        'record_type': IDL.Text,
+                        'content': IDL.Text,
+                        'timestamp': IDL.Nat64,
+                        'authorized_providers': IDL.Vec(IDL.Principal),
+                    });
+
+                    return IDL.Service({
+                        'add_record': IDL.Func([RecordInput], [IDL.Text], []),
+                        'get_my_records': IDL.Func([], [IDL.Vec(MedicalRecord)], ['query']),
+                        'share_with_provider': IDL.Func([IDL.Text, IDL.Principal], [IDL.Bool], []),
+                        'get_shared_records': IDL.Func([], [IDL.Vec(MedicalRecord)], ['query']),
+                        'revoke_access': IDL.Func([IDL.Text, IDL.Principal], [IDL.Bool], []),
+                    });
+                };
+
+                actor = await Actor.createActor(idlFactory, {
+                    agent,
+                    canisterId,
+                });
+
+                showStatus("Connected to ICP", "success");
+            } catch (error) {
+                showStatus("Connection failed: " + error.message, "error");
+            }
+        }
+
+        async function addRecord() {
+            if (!actor) {
+                showStatus("Please connect first", "error");
+                return;
+            }
+
+            const recordType = document.getElementById('recordType').value;
+            const content = document.getElementById('content').value;
+
+            if (!content.trim()) {
+                showStatus("Please enter record content", "error");
+                return;
+            }
+
+            try {
+                const recordId = await actor.add_record({
+                    record_type: recordType,
+                    content: content
+                });
+                
+                showStatus(`Record added with ID: ${recordId}`, "success");
+                document.getElementById('content').value = '';
+            } catch (error) {
+                showStatus("Failed to add record: " + error.message, "error");
+            }
+        }
+
+        async function loadRecords() {
+            if (!actor) {
+                showStatus("Please connect first", "error");
+                return;
+            }
+
+            try {
+                const records = await actor.get_my_records();
+                displayRecords(records, 'recordsList');
+                showStatus(`Loaded ${records.length} records`, "success");
+            } catch (error) {
+                showStatus("Failed to load records: " + error.message, "error");
+            }
+        }
+
+        async function shareRecord() {
+            if (!actor) {
+                showStatus("Please connect first", "error");
+                return;
+            }
+
+            const recordId = document.getElementById('shareRecordId').value;
+            const providerId = document.getElementById('providerId').value;
+
+            if (!recordId || !providerId) {
+                showStatus("Please enter both record ID and provider ID", "error");
+                return;
+            }
+
+            try {
+                const principal = Principal.fromText(providerId);
+                const success = await actor.share_with_provider(recordId, principal);
+                
+                if (success) {
+                    showStatus("Record shared successfully", "success");
+                } else {
+                    showStatus("Failed to share record", "error");
+                }
+            } catch (error) {
+                showStatus("Invalid provider ID or sharing failed: " + error.message, "error");
+            }
+        }
+
+        async function loadSharedRecords() {
+            if (!actor) {
+                showStatus("Please connect first", "error");
+                return;
+            }
+
+            try {
+                const records = await actor.get_shared_records();
+                displayRecords(records, 'sharedRecordsList');
+                showStatus(`Loaded ${records.length} shared records`, "success");
+            } catch (error) {
+                showStatus("Failed to load shared records: " + error.message, "error");
+            }
+        }
+
+        function displayRecords(records, containerId) {
+            const container = document.getElementById(containerId);
+            
+            if (records.length === 0) {
+                container.innerHTML = '<p>No records found.</p>';
+                return;
+            }
+
+            container.innerHTML = records.map(record => `
+                <div class="record">
+                    <div class="record-type">${record.record_type.toUpperCase()}</div>
+                    <div><strong>ID:</strong> ${record.id}</div>
+                    <div><strong>Content:</strong> ${record.content}</div>
+                    <div class="timestamp">Created: ${new Date(Number(record.timestamp) / 1000000).toLocaleString()}</div>
+                    <div><strong>Shared with:</strong> ${record.authorized_providers.length} providers</div>
+                </div>
+            `).join('');
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        // Load agent-js library
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/ic0/0.19.2/index.js';
+        document.head.appendChild(script);
+        
+        script.onload = () => {
+            window.HttpAgent = ic0.HttpAgent;
+            window.Actor = ic0.Actor;
+            window.Principal = ic0.Principal;
+        };
+    </script>
+</body>
 </html>
