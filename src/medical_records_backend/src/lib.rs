@@ -26,7 +26,7 @@ thread_local! {
     static RECORDS: RefCell<HashMap<String, MedicalRecord>> = RefCell::new(HashMap::new());
 }
 
-#[ic_cdk::update]
+#[update]
 fn add_record(input: RecordInput) -> String {
     let patient_id = caller();
     let record_id = format!("{}_{}_{}", patient_id.to_text(), input.record_type, time());
@@ -47,7 +47,7 @@ fn add_record(input: RecordInput) -> String {
     record_id
 }
 
-#[ic_cdk::query]
+#[query]
 fn get_my_records() -> Vec<MedicalRecord> {
     let patient_id = caller();
     
@@ -61,7 +61,7 @@ fn get_my_records() -> Vec<MedicalRecord> {
     })
 }
 
-#[ic_cdk::update]
+#[update]
 fn share_with_provider(record_id: String, provider_id: Principal) -> bool {
     let patient_id = caller();
     
@@ -81,7 +81,7 @@ fn share_with_provider(record_id: String, provider_id: Principal) -> bool {
     })
 }
 
-#[ic_cdk::query]
+#[query]
 fn get_shared_records() -> Vec<MedicalRecord> {
     let provider_id = caller();
     
@@ -95,7 +95,7 @@ fn get_shared_records() -> Vec<MedicalRecord> {
     })
 }
 
-#[ic_cdk::update]
+#[update]
 fn revoke_access(record_id: String, provider_id: Principal) -> bool {
     let patient_id = caller();
     
@@ -112,4 +112,11 @@ fn revoke_access(record_id: String, provider_id: Principal) -> bool {
     })
 }
 
+// Add a simple greet function to match your current Candid interface
+#[query]
+fn greet(name: String) -> String {
+    format!("Hello, {}! Welcome to the Medical Records DApp.", name)
+}
+
+// Export the Candid interface
 ic_cdk::export_candid!();

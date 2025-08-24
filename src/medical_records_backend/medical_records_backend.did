@@ -1,3 +1,22 @@
+type RecordInput = record {
+    record_type: text;
+    content: text;
+};
+
+type MedicalRecord = record {
+    id: text;
+    patient_id: principal;
+    record_type: text;
+    content: text;
+    timestamp: nat64;
+    authorized_providers: vec principal;
+};
+
 service : {
     "greet": (text) -> (text) query;
+    "add_record": (RecordInput) -> (text);
+    "get_my_records": () -> (vec MedicalRecord) query;
+    "share_with_provider": (text, principal) -> (bool);
+    "get_shared_records": () -> (vec MedicalRecord) query;
+    "revoke_access": (text, principal) -> (bool);
 }
